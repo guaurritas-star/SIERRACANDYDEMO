@@ -1,0 +1,6 @@
+{
+  "name": "Candy Catalog — Catálogo Editorial & Conversión WhatsApp con IA",
+  "description": "Plataforma multi-tenant de catálogos interactivos asistidos por Gemini IA y ventas directas por WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

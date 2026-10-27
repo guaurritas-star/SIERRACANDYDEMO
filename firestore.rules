@@ -1,0 +1,196 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'studiomxcandy@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidTenant(data, tenantId) {
+      return data.keys().hasAll([
+        'tenantId', 'ownerId', 'name', 'storeUrl', 'whatsappPhone',
+        'showroomCity', 'announcement', 'autoSync', 'currency',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'tenantId', 'ownerId', 'name', 'storeUrl', 'whatsappPhone',
+        'showroomCity', 'announcement', 'autoSync', 'currency',
+        'logoUrl', 'accentColor', 'brandName', 'industry', 'tagline', 'tone',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.tenantId == tenantId &&
+      data.ownerId == request.auth.uid &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+      data.storeUrl is string && data.storeUrl.size() <= 160 &&
+      data.whatsappPhone is string && data.whatsappPhone.size() >= 7 && data.whatsappPhone.size() <= 40 &&
+      data.showroomCity is string && data.showroomCity.size() <= 120 &&
+      data.announcement is string && data.announcement.size() <= 300 &&
+      data.autoSync is bool &&
+      data.currency is string && data.currency.size() <= 10 &&
+      (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() <= 500000)) &&
+      (!('accentColor' in data) || (data.accentColor is string && data.accentColor.size() <= 20)) &&
+      (!('brandName' in data) || (data.brandName is string && data.brandName.size() <= 120)) &&
+      (!('industry' in data) || (data.industry is string && data.industry.size() <= 120)) &&
+      (!('tagline' in data) || (data.tagline is string && data.tagline.size() <= 300)) &&
+      (!('tone' in data) || (data.tone is string && data.tone.size() <= 120)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidProduct(data, tenantId, productId) {
+      return data.keys().hasAll([
+        'id', 'tenantId', 'ownerId', 'sku', 'name', 'description',
+        'category', 'price', 'status', 'heroImage', 'waTemplate',
+        'availableSizes', 'tags', 'finishes', 'galleryImages', 'sizeMatrix',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'tenantId', 'ownerId', 'sku', 'name', 'subtitle', 'description',
+        'category', 'catalogCategory', 'price', 'comparePrice', 'status',
+        'badge', 'badgeType', 'madeIn', 'heroImage', 'waTemplate',
+        'availableSizes', 'tags', 'finishes', 'galleryImages', 'sizeMatrix',
+        'craftDetails', 'originMeta', 'consultationsCount', 'lastConsultation',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.id == productId &&
+      data.tenantId == tenantId &&
+      data.ownerId == request.auth.uid &&
+      data.sku is string && data.sku.size() >= 1 && data.sku.size() <= 64 &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 160 &&
+      (!('subtitle' in data) || (data.subtitle is string && data.subtitle.size() <= 400)) &&
+      data.description is string && data.description.size() <= 4000 &&
+      data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
+      (!('catalogCategory' in data) || (data.catalogCategory is string && data.catalogCategory.size() <= 80)) &&
+      data.price is number && data.price >= 0 && data.price <= 10000000 &&
+      (!('comparePrice' in data) || (data.comparePrice is number && data.comparePrice >= 0 && data.comparePrice <= 10000000)) &&
+      data.status in ['published', 'hidden', 'soldout'] &&
+      (!('badge' in data) || (data.badge is string && data.badge.size() <= 80)) &&
+      (!('badgeType' in data) || (data.badgeType in ['primary', 'secondary', 'neutral'])) &&
+      (!('madeIn' in data) || (data.madeIn is string && data.madeIn.size() <= 120)) &&
+      data.heroImage is string && data.heroImage.size() <= 600000 &&
+      data.waTemplate is string && data.waTemplate.size() <= 600 &&
+      data.availableSizes is list && data.availableSizes.size() <= 24 &&
+      (data.availableSizes.size() == 0 || data.availableSizes[0] is string) &&
+      data.tags is list && data.tags.size() <= 20 &&
+      (data.tags.size() == 0 || data.tags[0] is string) &&
+      data.finishes is list && data.finishes.size() <= 20 &&
+      data.galleryImages is list && data.galleryImages.size() <= 12 &&
+      data.sizeMatrix is list && data.sizeMatrix.size() <= 24 &&
+      (!('craftDetails' in data) || (data.craftDetails is list && data.craftDetails.size() <= 15)) &&
+      (!('originMeta' in data) || (data.originMeta is map && data.originMeta.size() <= 10)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    match /tenants/{tenantId} {
+      // Public visitors can read a tenant's storefront configuration by ID
+      allow get: if isValidId(tenantId);
+      // Merchants can list only their own tenant documents
+      allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(tenantId) &&
+        isValidTenant(incoming(), tenantId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(tenantId) &&
+        isValidTenant(incoming(), tenantId) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().tenantId == existing().tenantId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (existing().ownerId == request.auth.uid &&
+           incoming().diff(existing()).affectedKeys().hasOnly([
+             'name', 'storeUrl', 'whatsappPhone', 'showroomCity',
+             'announcement', 'autoSync', 'currency', 'logoUrl',
+             'accentColor', 'brandName', 'industry', 'tagline', 'tone',
+             'updatedAt'
+           ]))
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(tenantId) &&
+        (existing().ownerId == request.auth.uid || isAdmin());
+
+      match /products/{productId} {
+        // Public can only view published or soldout items; Merchant owner can view all (including hidden drafts)
+        allow get: if isValidId(tenantId) && isValidId(productId) && (
+          existing().status in ['published', 'soldout'] ||
+          (isSignedIn() && existing().ownerId == request.auth.uid) ||
+          isAdmin()
+        );
+
+        allow list: if existing().status in ['published', 'soldout'] ||
+          (isSignedIn() && existing().ownerId == request.auth.uid) ||
+          isAdmin();
+
+        allow create: if isVerifiedUser() &&
+          isValidId(tenantId) &&
+          isValidId(productId) &&
+          isValidProduct(incoming(), tenantId, productId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          exists(/databases/$(database)/documents/tenants/$(tenantId)) &&
+          get(/databases/$(database)/documents/tenants/$(tenantId)).data.ownerId == request.auth.uid;
+
+        allow update: if isVerifiedUser() &&
+          isValidId(tenantId) &&
+          isValidId(productId) &&
+          isValidProduct(incoming(), tenantId, productId) &&
+          incoming().id == existing().id &&
+          incoming().tenantId == existing().tenantId &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          exists(/databases/$(database)/documents/tenants/$(tenantId)) &&
+          get(/databases/$(database)/documents/tenants/$(tenantId)).data.ownerId == request.auth.uid && (
+            isAdmin() ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'sku', 'name', 'subtitle', 'description', 'category',
+              'catalogCategory', 'price', 'comparePrice', 'status',
+              'badge', 'badgeType', 'madeIn', 'heroImage', 'waTemplate',
+              'availableSizes', 'tags', 'finishes', 'galleryImages',
+              'sizeMatrix', 'craftDetails', 'originMeta', 'consultationsCount',
+              'lastConsultation', 'updatedAt'
+            ])
+          );
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(tenantId) &&
+          isValidId(productId) &&
+          exists(/databases/$(database)/documents/tenants/$(tenantId)) &&
+          (get(/databases/$(database)/documents/tenants/$(tenantId)).data.ownerId == request.auth.uid || isAdmin());
+      }
+    }
+  }
+}

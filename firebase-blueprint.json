@@ -1,0 +1,232 @@
+{
+  "entities": {
+    "Tenant": {
+      "title": "Tenant",
+      "description": "Configuration and brand identity for a merchant storefront in Candy Catalog.",
+      "type": "object",
+      "properties": {
+        "tenantId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "storeUrl": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "whatsappPhone": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 40
+        },
+        "showroomCity": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "announcement": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "autoSync": {
+          "type": "boolean"
+        },
+        "currency": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "logoUrl": {
+          "type": "string",
+          "maxLength": 500000
+        },
+        "accentColor": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "brandName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "industry": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "tagline": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "tone": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "tenantId",
+        "ownerId",
+        "name",
+        "storeUrl",
+        "whatsappPhone",
+        "showroomCity",
+        "announcement",
+        "autoSync",
+        "currency",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Catalog product belonging to a specific tenant.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "tenantId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "sku": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "catalogCategory": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "price": {
+          "type": "number"
+        },
+        "comparePrice": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["published", "hidden", "soldout"]
+        },
+        "badge": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "badgeType": {
+          "type": "string",
+          "enum": ["primary", "secondary", "neutral"]
+        },
+        "madeIn": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "heroImage": {
+          "type": "string",
+          "maxLength": 600000
+        },
+        "waTemplate": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "availableSizes": {
+          "type": "array"
+        },
+        "tags": {
+          "type": "array"
+        },
+        "finishes": {
+          "type": "array"
+        },
+        "galleryImages": {
+          "type": "array"
+        },
+        "sizeMatrix": {
+          "type": "array"
+        },
+        "craftDetails": {
+          "type": "array"
+        },
+        "originMeta": {
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "ownerId",
+        "sku",
+        "name",
+        "description",
+        "category",
+        "price",
+        "status",
+        "heroImage",
+        "waTemplate",
+        "availableSizes",
+        "tags",
+        "finishes",
+        "galleryImages",
+        "sizeMatrix",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/tenants/{tenantId}": {
+      "schema": { "$ref": "#/entities/Tenant" },
+      "description": "Storefront configuration owned by a merchant."
+    },
+    "/tenants/{tenantId}/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Products belonging to a specific tenant storefront."
+    }
+  }
+}

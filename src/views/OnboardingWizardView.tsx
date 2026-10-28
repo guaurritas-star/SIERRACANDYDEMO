@@ -1,4 +1,6 @@
 import { authenticatedApiFetch } from '../utils/authenticatedApiFetch';
+import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider } from '../firebase';
 import React, { useState, useRef } from 'react';
 import {
   Product,
@@ -33,6 +35,7 @@ interface OnboardingWizardViewProps {
   onExploreDemoSierra: () => void;
   onOpenMerchantConsole: () => void;
   onReturnToGateway: () => void;
+  isAuthenticated: boolean;
   onShowToast: (msg: string) => void;
 }
 
@@ -49,6 +52,7 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
   onExploreDemoSierra,
   onOpenMerchantConsole,
   onReturnToGateway,
+  isAuthenticated,
   onShowToast,
 }) => {
   const [phase, setPhase] = useState<OnboardingPhase>('welcome');
@@ -920,6 +924,22 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
         </nav>
 
         <div className="flex items-center gap-2 shrink-0">
+          {!isAuthenticated && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await signInWithPopup(auth, googleProvider);
+                  onShowToast('Sesión iniciada. Ya puedes utilizar la importación inteligente.');
+                } catch {
+                  onShowToast('No se pudo iniciar sesión. Abre la app fuera de la vista previa integrada y prueba otra vez.');
+                }
+              }}
+              className="px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-white bg-[#6447A3] hover:bg-[#4B367C] focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              Entrar con Google
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowUxEvaluationModal((prev) => !prev)}

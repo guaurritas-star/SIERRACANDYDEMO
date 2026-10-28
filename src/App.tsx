@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import {
   collection,
@@ -93,6 +93,7 @@ export default function App() {
 
   // Auth & Firestore State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const previousAuthUidRef = useRef<string | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isDemoMerchantUnlocked, setIsDemoMerchantUnlocked] = useState(false);
@@ -139,34 +140,52 @@ export default function App() {
     }, 3400);
   };
 
-  // Sync state to LocalStorage for instant offline/reload persistence
+  // Guest demo drafts only; authenticated business data belongs in Firestore.
   useEffect(() => {
+    if (currentUser) return;
     try {
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
     } catch {
       // ignore
     }
-  }, [products]);
+  }, [products, currentUser]);
 
   useEffect(() => {
+    if (currentUser) return;
     try {
       localStorage.setItem(STORAGE_KEYS.TENANT, JSON.stringify(tenantConfig));
     } catch {
       // ignore
     }
-  }, [tenantConfig]);
+  }, [tenantConfig, currentUser]);
 
   useEffect(() => {
+    if (currentUser) return;
     try {
       localStorage.setItem(STORAGE_KEYS.LEADS, JSON.stringify(leads));
     } catch {
       // ignore
     }
-  }, [leads]);
+  }, [leads, currentUser]);
 
   // Listen to Firebase Auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      const previousUid = previousAuthUidRef.current;
+      const nextUid = user?.uid || null;
+      const cachedTenant = localStorage.getItem(STORAGE_KEYS.TENANT);
+      let previousCachedOwner = false;
+      try { previousCachedOwner = Boolean(cachedTenant && JSON.parse(cachedTenant)?.ownerId); }
+      catch { /* Corrupt cached demo data should not block login */ }
+      if ((nextUid && previousUid !== nextUid) ||
+          (!nextUid && (previousUid !== null || previousCachedOwner))) {
+        // Never carry an account's locally cached tenant/products into another session.
+        Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+        setProducts(nextUid ? [] : INITIAL_PRODUCTS);
+        setTenantConfig(INITIAL_TENANT_CONFIG);
+        setLeads(INITIAL_LEADS);
+      }
+      previousAuthUidRef.current = nextUid;
       setCurrentUser(user);
       setIsAuthReady(true);
     });

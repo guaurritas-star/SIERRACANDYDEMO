@@ -59,7 +59,7 @@ function cleanText(text: string | undefined, max: number): string {
 
 export function BrandDiscoveryView({ tenantConfig, isAuthenticated, onLogin, onBack, onSave }: BrandDiscoveryViewProps) {
   const existing = tenantConfig.theme;
-  const isDemo = !existing?.brandName || /^sierra( footwear)?$/i.test(existing.brandName.trim());
+  const isDemo = !existing?.brandName || /^(sierra( footwear)?|mi negocio)$/i.test(existing.brandName.trim());
   const [name, setName] = useState(isDemo ? '' : existing?.brandName || '');
   const [description, setDescription] = useState('');
   const [audience, setAudience] = useState(isDemo ? '' : existing?.targetAudience || '');

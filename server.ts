@@ -1084,10 +1084,10 @@ async function startServer() {
     res.sendFile(PDF_WORKER_SRC);
   });
 
-  app.use(express.json({ limit: '25mb' }));
-  // Apply auth AND budget checks before any paid model inference.
+  // Authenticate and check quotas BEFORE parsing potentially large PDF/image payloads.
   app.use('/api/gemini', requireFirebaseUser, limitAiRequests);
   app.use('/api/uploads', requireFirebaseUser, limitAiRequests);
+  app.use(express.json({ limit: '25mb' }));
   // Public product images are served via a read-only proxy. Bucket itself stays private.
   app.get('/uploads/:uid/:filename', async (req, res) => {
     if (!PERSISTENT_BUCKET) {

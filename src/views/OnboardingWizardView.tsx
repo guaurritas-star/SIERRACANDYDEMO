@@ -1,3 +1,4 @@
+import { authenticatedApiFetch } from '../utils/authenticatedApiFetch';
 import React, { useState, useRef } from 'react';
 import {
   Product,
@@ -330,7 +331,7 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
     setIsAiThinking(true);
 
     try {
-      const res = await fetch('/api/gemini/advisor', {
+      const res = await authenticatedApiFetch('/api/gemini/advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

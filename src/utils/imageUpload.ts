@@ -1,3 +1,4 @@
+import { authenticatedApiFetch } from './authenticatedApiFetch';
 import { removeProductBackgroundToStudio } from './catalogExtractor';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -78,7 +79,7 @@ export async function processAndUploadImage(
 
   let originalStoredUrl = compressedDataUrl;
   try {
-    const response = await fetch('/api/uploads', {
+    const response = await authenticatedApiFetch('/api/uploads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

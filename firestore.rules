@@ -43,7 +43,7 @@ service cloud.firestore {
         'tenantId', 'ownerId', 'name', 'storeUrl', 'whatsappPhone',
         'showroomCity', 'announcement', 'autoSync', 'currency',
         'logoUrl', 'accentColor', 'brandName', 'industry', 'tagline', 'tone',
-        'createdAt', 'updatedAt'
+        'brandProfile', 'createdAt', 'updatedAt'
       ]) &&
       data.tenantId == tenantId &&
       data.ownerId == request.auth.uid &&
@@ -60,6 +60,20 @@ service cloud.firestore {
       (!('industry' in data) || (data.industry is string && data.industry.size() <= 120)) &&
       (!('tagline' in data) || (data.tagline is string && data.tagline.size() <= 300)) &&
       (!('tone' in data) || (data.tone is string && data.tone.size() <= 120)) &&
+      (!('brandProfile' in data) || (
+        data.brandProfile is map &&
+        data.brandProfile.keys().hasOnly([
+          'targetAudience','productTypes','valuePropositions','suggestedCategories',
+          'layoutStyle','fontPairing','onboardingCompleted'
+        ]) &&
+        (!('targetAudience' in data.brandProfile) || (data.brandProfile.targetAudience is string && data.brandProfile.targetAudience.size() <= 200)) &&
+        (!('productTypes' in data.brandProfile) || (data.brandProfile.productTypes is string && data.brandProfile.productTypes.size() <= 200)) &&
+        (!('valuePropositions' in data.brandProfile) || (data.brandProfile.valuePropositions is list && data.brandProfile.valuePropositions.size() <= 5)) &&
+        (!('suggestedCategories' in data.brandProfile) || (data.brandProfile.suggestedCategories is list && data.brandProfile.suggestedCategories.size() <= 8)) &&
+        (!('layoutStyle' in data.brandProfile) || data.brandProfile.layoutStyle in ['editorial-luxury','minimal-gallery','technical-spec']) &&
+        (!('fontPairing' in data.brandProfile) || data.brandProfile.fontPairing in ['editorial-serif','modern-sans','technical-mono']) &&
+        (!('onboardingCompleted' in data.brandProfile) || data.brandProfile.onboardingCompleted is bool)
+      )) &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
     }
@@ -134,7 +148,7 @@ service cloud.firestore {
              'name', 'storeUrl', 'whatsappPhone', 'showroomCity',
              'announcement', 'autoSync', 'currency', 'logoUrl',
              'accentColor', 'brandName', 'industry', 'tagline', 'tone',
-             'updatedAt'
+             'brandProfile', 'updatedAt'
            ]))
         );
 

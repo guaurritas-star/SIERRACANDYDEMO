@@ -164,9 +164,13 @@ service cloud.firestore {
           isAdmin()
         );
 
-        allow list: if existing().status in ['published', 'soldout'] ||
-          (isSignedIn() && existing().ownerId == request.auth.uid) ||
-          isAdmin();
+        // Owner may list all products within their own tenant without an ownerId filter.
+        // Public queries still need filters that guarantee published/soldout results.
+        allow list: if (
+          isSignedIn() &&
+          exists(/databases/$(database)/documents/tenants/$(tenantId)) &&
+          get(/databases/$(database)/documents/tenants/$(tenantId)).data.ownerId == request.auth.uid
+        ) || existing().status in ['published', 'soldout'] || isAdmin();
 
         allow create: if isVerifiedUser() &&
           isValidId(tenantId) &&

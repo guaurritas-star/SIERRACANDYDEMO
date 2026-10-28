@@ -5,6 +5,9 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    // GitHub Pages serves project sites under /<repository-name>/.
+    // Preserve root paths when deploying the same app in Google AI Studio.
+    base: process.env.GITHUB_PAGES === 'true' ? '/SIERRACANDYDEMO/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

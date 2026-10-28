@@ -7,6 +7,7 @@
 
 - Pantalla de inicio dual: Digitalizar catálogo o Crear mi marca con IA.
 - Brand Discovery: brief, autenticación Google, una solicitud a Gemini, edición de diagnóstico, elección de 3 estilos prediseñados y guardado en un perfil compartido.
+- Cada comerciante nuevo inicia con inventario vacío: ya no se copian los productos SIERRA ni borradores locales de otra cuenta. Los datos empresariales autenticados no se cachean globalmente en localStorage.
 - Los requests a `/api/gemini/*` y `/api/uploads` incluyen Firebase ID token desde la sesión del usuario.
 - Express verifica tokens mediante el endpoint oficial Firebase Authentication `accounts:lookup`, restringe usuarios sin correo verificado y aplica cuotas iniciales por UID y por proceso.
 - Solamente un modelo Gemini configurable `GEMINI_MODEL`, por defecto `gemini-3.1-flash-lite`. No hay sustitución automática por un modelo más costoso.

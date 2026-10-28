@@ -37,6 +37,11 @@ jobs:
         env:
           GITHUB_PAGES: 'true'
 
+      - name: Browser smoke test — render full SPA at GitHub Pages subpath
+        run: node scripts/browser-smoke.mjs
+        env:
+          GITHUB_PAGES: 'true'
+
       - name: Smoke-test protected backend routes
         run: node scripts/security-smoke.mjs
 

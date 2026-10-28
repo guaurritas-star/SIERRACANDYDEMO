@@ -42,6 +42,8 @@ import { MerchantGraphicStudioView } from './views/MerchantGraphicStudioView';
 import { BusinessThemeModal } from './components/BusinessThemeModal';
 import { PricingPlansModal } from './components/PricingPlansModal';
 import { OnboardingWizardView } from './views/OnboardingWizardView';
+import { CandyStudioGateway } from './views/CandyStudioGateway';
+import { BrandDiscoveryView } from './views/BrandDiscoveryView';
 import { sanitizeProductCollection } from './utils/catalogExtractor';
 
 const STORAGE_KEYS = {
@@ -114,6 +116,7 @@ export default function App() {
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
   const [showOnboardingWizard, setShowOnboardingWizard] = useState<boolean>(true);
+  const [entryFlow, setEntryFlow] = useState<'gateway' | 'catalog' | 'brand'>('gateway');
 
   const selectedProduct = useMemo(() => {
     return (
@@ -669,11 +672,53 @@ export default function App() {
     showToast('Sesión de comerciante cerrada');
   };
 
+  if (showOnboardingWizard && entryFlow === 'gateway') {
+    return (
+      <CandyStudioGateway
+        onCatalog={() => setEntryFlow('catalog')}
+        onBrand={() => setEntryFlow('brand')}
+        onDemo={() => {
+          setTenantConfig(INITIAL_TENANT_CONFIG);
+          setProducts(INITIAL_PRODUCTS);
+          setSelectedProductId(INITIAL_PRODUCTS[0].id);
+          setShowOnboardingWizard(false);
+          setViewMode('public');
+          setPublicTab('catalog');
+          showToast('Explorando catálogo de demostración SIERRA Footwear');
+        }}
+        onMerchant={() => {
+          setShowOnboardingWizard(false);
+          handleSwitchViewMode('merchant');
+        }}
+      />
+    );
+  }
+
+  if (showOnboardingWizard && entryFlow === 'brand') {
+    return (
+      <>
+        <BrandDiscoveryView
+          tenantConfig={tenantConfig}
+          onBack={() => setEntryFlow('gateway')}
+          onSave={async (updatedConfig, openCatalog) => {
+            await handleSaveTenantConfig(updatedConfig);
+            showToast(currentUser
+              ? 'ADN de marca guardado en tu negocio.'
+              : 'ADN de marca guardado en este navegador. Inicia sesión para sincronizarlo.');
+            if (openCatalog) setEntryFlow('catalog');
+          }}
+        />
+        <Toast message={toastMessage} isVisible={isToastVisible} />
+      </>
+    );
+  }
+
   if (showOnboardingWizard) {
     return (
       <div className="min-h-screen bg-[#F9F9F8] text-[#1A1C1C]">
         <OnboardingWizardView
           tenantConfig={tenantConfig}
+          onReturnToGateway={() => setEntryFlow('gateway')}
           onComplete={async (updatedConfig, generatedProducts, destination) => {
             await handleSaveTenantConfig(updatedConfig);
             if (generatedProducts && generatedProducts.length > 0) {
@@ -745,7 +790,10 @@ export default function App() {
         onOpenSearch={() => setIsSearchModalOpen(true)}
         onOpenThemeModal={() => setIsThemeModalOpen(true)}
         onOpenPricingModal={() => setIsPricingModalOpen(true)}
-        onRestartOnboarding={() => setShowOnboardingWizard(true)}
+        onRestartOnboarding={() => {
+          setEntryFlow('gateway');
+          setShowOnboardingWizard(true);
+        }}
         currentUser={currentUser}
         onSignOut={handleSignOut}
       />

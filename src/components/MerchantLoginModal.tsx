@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase';
+import { signInWithGoogle, googleSignInErrorMessage } from '../utils/googleSignIn';
 
 interface MerchantLoginModalProps {
   isOpen: boolean;
@@ -26,17 +25,11 @@ export const MerchantLoginModal: React.FC<MerchantLoginModalProps> = ({
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      await signInWithPopup(auth, googleProvider);
+      await signInWithGoogle();
       onAuthenticated();
-    } catch (err: any) {
-      console.error('Auth error:', err);
-      if (err?.code === 'auth/popup-closed-by-user') {
-        setErrorMsg('Cerraste la ventana de inicio de sesión antes de completar el acceso.');
-      } else {
-        setErrorMsg(
-          'La ventana emergente fue bloqueada por el navegador o entorno de vista previa. Puedes volver a intentar o acceder en modo demostración.'
-        );
-      }
+    } catch (err: unknown) {
+      console.error('Firebase Google sign-in failed:', err);
+      setErrorMsg(googleSignInErrorMessage(err));
     } finally {
       setIsLoading(false);
     }

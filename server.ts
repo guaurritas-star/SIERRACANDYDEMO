@@ -945,6 +945,35 @@ function parseCatalogTextFallback(pageText: string, fileName: string, pageNumber
 }
 
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
+const PERSISTENT_BUCKET = (process.env.CANDY_UPLOAD_BUCKET || '').trim();
+// Google Cloud Run service account must have storage.objects.create and storage.objects.get.
+// This keeps permanent files outside Cloud Run's ephemeral filesystem.
+async function getStorageAccessToken(): Promise<string> {
+  const response = await fetch(
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+    { headers: { 'Metadata-Flavor': 'Google' }, signal: AbortSignal.timeout(5000) }
+  );
+  if (!response.ok) throw new Error('Cloud Run storage credentials unavailable');
+  const data = await response.json() as { access_token?: string };
+  if (!data.access_token) throw new Error('No storage token available');
+  return data.access_token;
+}
+async function storePermanentImage(uid: string, filename: string, content: Buffer, mimeType: string) {
+  if (!PERSISTENT_BUCKET) throw new Error('CANDY_UPLOAD_BUCKET is not configured');
+  const objectName = 'tenants/' + uid + '/' + filename;
+  const token = await getStorageAccessToken();
+  const url = 'https://storage.googleapis.com/upload/storage/v1/b/' +
+    encodeURIComponent(PERSISTENT_BUCKET) + '/o?uploadType=media&name=' + encodeURIComponent(objectName);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': mimeType },
+    body: new Uint8Array(content),
+    signal: AbortSignal.timeout(20000)
+  });
+  if (!response.ok) throw new Error('Could not store image in Cloud Storage');
+  return '/uploads/' + encodeURIComponent(uid) + '/' + encodeURIComponent(filename);
+}
+
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
@@ -1045,7 +1074,7 @@ function limitAiRequests(req: Request, res: Response, next: NextFunction) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
 
   // CRITICAL: Serve pdf.worker.min.mjs directly from Express BEFORE Vite middleware
   // so Vite never injects `import { injectQuery } from "/@vite/client"` into the Web Worker script.
@@ -1059,6 +1088,34 @@ async function startServer() {
   // Apply auth AND budget checks before any paid model inference.
   app.use('/api/gemini', requireFirebaseUser, limitAiRequests);
   app.use('/api/uploads', requireFirebaseUser, limitAiRequests);
+  // Public product images are served via a read-only proxy. Bucket itself stays private.
+  app.get('/uploads/:uid/:filename', async (req, res) => {
+    if (!PERSISTENT_BUCKET) {
+      return res.status(503).send('Permanent image storage is not configured.');
+    }
+    const { uid, filename } = req.params;
+    if (!/^[A-Za-z0-9_-]{6,128}$/.test(uid) || !/^[a-z0-9_-]{1,55}-[0-9]{12,}-[0-9a-f-]{36}\.(jpg|png|webp)$/.test(filename)) {
+      return res.status(400).send('Invalid image path');
+    }
+    try {
+      const token = await getStorageAccessToken();
+      const object = 'tenants/' + uid + '/' + filename;
+      const apiUrl = 'https://storage.googleapis.com/storage/v1/b/' +
+        encodeURIComponent(PERSISTENT_BUCKET) + '/o/' + encodeURIComponent(object) + '?alt=media';
+      const remote = await fetch(apiUrl, {
+        headers: { Authorization: 'Bearer ' + token },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!remote.ok) return res.status(remote.status === 404 ? 404 : 502).send('Image not available');
+      const ext = filename.split('.').pop();
+      res.setHeader('Content-Type', ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.end(Buffer.from(await remote.arrayBuffer()));
+    } catch {
+      return res.status(502).send('Image storage unavailable');
+    }
+  });
+  // Legacy demo images (not newly uploaded client images).
   app.use('/uploads', express.static(UPLOADS_DIR));
 
   // Persistent image upload endpoint with MIME type and 5MB size validation
@@ -1098,16 +1155,21 @@ async function startServer() {
         .replace(/[^a-z0-9-_]/g, '-')
         .slice(0, 40);
       const uniqueName = `${safeBaseName}-${Date.now()}-${crypto.randomUUID()}.${ext}`;
-      const filePath = path.join(UPLOADS_DIR, uniqueName);
-
-      await fs.promises.writeFile(filePath, buffer);
-
-      return res.json({
-        url: `/uploads/${uniqueName}`,
-        dataUrl,
-        size: buffer.length,
-        mimeType,
-      });
+      const currentUser = (req as Request & { candyUser?: { uid: string } }).candyUser;
+      if (!currentUser?.uid) return res.status(401).json({ error: 'Authentication is required.' });
+      let storedUrl: string;
+      if (PERSISTENT_BUCKET) {
+        storedUrl = await storePermanentImage(currentUser.uid, uniqueName, buffer, mimeType);
+      } else if (process.env.NODE_ENV === 'production') {
+        return res.status(503).json({
+          error: 'Almacenamiento permanente no configurado. Configura CANDY_UPLOAD_BUCKET antes de publicar.'
+        });
+      } else {
+        // Development-only local fallback; never describe it as permanent.
+        await fs.promises.writeFile(path.join(UPLOADS_DIR, uniqueName), buffer);
+        storedUrl = '/uploads/' + uniqueName;
+      }
+      return res.json({ url: storedUrl, size: buffer.length, mimeType });
     } catch (error: any) {
       console.error('Upload error:', error);
       return res.status(500).json({

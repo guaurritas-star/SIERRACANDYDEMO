@@ -39,7 +39,7 @@ try {
   const missing = expected.filter(x => !dom.includes(x));
   if (missing.length) {
     throw new Error('Browser did not render the interactive Candy Studio gateway. Missing: ' +
-      missing.join(', ') + '. Root: ' + (dom.match(/<div id="root">[\\s\\S]*?<\\/div>/)?.[0] || '').slice(0,700));
+      missing.join(', ') + '. Root: ' + dom.slice(Math.max(0, dom.indexOf('<div id="root"')), Math.max(0, dom.indexOf('<div id="root"')) + 700));
   }
   console.log('PASS: Chrome rendered the Candy Studio AI gateway through Vite preview at ' + url);
 } finally {

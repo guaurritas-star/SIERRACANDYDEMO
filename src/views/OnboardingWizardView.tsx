@@ -55,6 +55,7 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
   onShowToast,
 }) => {
   const [phase, setPhase] = useState<OnboardingPhase>('welcome');
+  const [googleLoginError, setGoogleLoginError] = useState<string | null>(null);
 
   // Phase 1 State: Business Profile & Progressive Conversation
   const [chatHistory, setChatHistory] = useState<ChatTurn[]>([
@@ -929,9 +930,10 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
               onClick={async () => {
                 try {
                   await signInWithGoogle();
+                  setGoogleLoginError(null);
                   onShowToast('Sesión iniciada. Ya puedes utilizar la importación inteligente.');
                 } catch (error) {
-                  onShowToast(googleSignInErrorMessage(error));
+                  setGoogleLoginError(googleSignInErrorMessage(error));
                 }
               }}
               className="px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-white bg-[#6447A3] hover:bg-[#4B367C] focus-visible:outline-2 focus-visible:outline-offset-2"
@@ -963,8 +965,12 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
         </div>
       </header>
 
-      {/* ================================================================= */}
-      {/* PANEL DESPLEGABLE: EVALUACIÓN UX/UI STITCH & CANDY CATALOG */}
+      {googleLoginError && (
+        <div role="alert" className="mx-4 my-4 border border-[#ECA6A1] bg-[#FFF0EE] px-4 py-3 text-sm text-[#882B26] sm:mx-8">
+          <strong>No pudimos abrir tu sesión de Google.</strong> {googleLoginError}
+        </div>
+      )}
+      {mark}
       {/* ================================================================= */}
       {showUxEvaluationModal && (
         <section

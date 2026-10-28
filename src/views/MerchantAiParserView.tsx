@@ -1,3 +1,4 @@
+import { authenticatedApiFetch } from '../utils/authenticatedApiFetch';
 import React, { useState, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { doc, getDocFromServer } from 'firebase/firestore';
@@ -340,7 +341,7 @@ export const MerchantAiParserView: React.FC<MerchantAiParserViewProps> = ({
       const dataUrl = reader.result as string;
       let finalUrl = dataUrl;
       try {
-        const res = await fetch('/api/uploads', {
+        const res = await authenticatedApiFetch('/api/uploads', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dataUrl, fileName: file.name }),

@@ -1,3 +1,4 @@
+import { authenticatedApiFetch } from './authenticatedApiFetch';
 import * as pdfjsLib from 'pdfjs-dist';
 import JSZip from 'jszip';
 import {
@@ -348,7 +349,7 @@ export function sanitizeProductCollection(items: Product[]): {
 
 async function persistCroppedDataUrl(dataUrl: string, baseName: string): Promise<string> {
   try {
-    const res = await fetch('/api/uploads', {
+    const res = await authenticatedApiFetch('/api/uploads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -950,7 +951,7 @@ export async function segmentProductBackgroundWithAi(
 
   let aiHint: AiSegmentationHint | undefined;
   try {
-    const res = await fetch('/api/gemini/segment-product', {
+    const res = await authenticatedApiFetch('/api/gemini/segment-product', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageDataUrl: dataUrlToSend }),
@@ -1431,7 +1432,7 @@ export async function extractFromPdfFile(
         : 'Analizando composición visual e identidad de marca con Gemini Vision',
     });
 
-    const response = await fetch('/api/gemini/extract-catalog-page', {
+    const response = await authenticatedApiFetch('/api/gemini/extract-catalog-page', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1681,7 +1682,7 @@ export async function extractFromImageFiles(
 
     const isLowRes = width < 300 || height < 300;
 
-    const response = await fetch('/api/gemini/extract-catalog-page', {
+    const response = await authenticatedApiFetch('/api/gemini/extract-catalog-page', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1937,7 +1938,7 @@ export async function runLiveDemoPageExtraction(
     detail: 'Enviando imagen y texto a /api/gemini/extract-catalog-page',
   });
 
-  const response = await fetch('/api/gemini/extract-catalog-page', {
+  const response = await authenticatedApiFetch('/api/gemini/extract-catalog-page', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

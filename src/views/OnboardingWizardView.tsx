@@ -1,3 +1,6 @@
+import { authenticatedApiFetch } from '../utils/authenticatedApiFetch';
+import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider } from '../firebase';
 import React, { useState, useRef } from 'react';
 import {
   Product,
@@ -31,6 +34,8 @@ interface OnboardingWizardViewProps {
   ) => void;
   onExploreDemoSierra: () => void;
   onOpenMerchantConsole: () => void;
+  onReturnToGateway: () => void;
+  isAuthenticated: boolean;
   onShowToast: (msg: string) => void;
 }
 
@@ -46,6 +51,8 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
   onComplete,
   onExploreDemoSierra,
   onOpenMerchantConsole,
+  onReturnToGateway,
+  isAuthenticated,
   onShowToast,
 }) => {
   const [phase, setPhase] = useState<OnboardingPhase>('welcome');
@@ -60,11 +67,14 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
   const [userInput, setUserInput] = useState('');
   const [isAiThinking, setIsAiThinking] = useState(false);
 
-  const [brandName, setBrandName] = useState('');
-  const [industry, setIndustry] = useState('');
+  const [brandName, setBrandName] = useState(
+    /^sierra( footwear)?$/i.test(tenantConfig.theme?.brandName || '')
+      ? '' : (tenantConfig.theme?.brandName || '')
+  );
+  const [industry, setIndustry] = useState(tenantConfig.theme?.industry || '');
   const [productTypes, setProductTypes] = useState('');
-  const [targetAudience, setTargetAudience] = useState('');
-  const [location, setLocation] = useState('');
+  const [targetAudience, setTargetAudience] = useState(tenantConfig.theme?.targetAudience || '');
+  const [location, setLocation] = useState(tenantConfig.theme?.location || '');
   const [whatsappPhone, setWhatsappPhone] = useState(
     tenantConfig.whatsappPhone || '+52 477 123 4567'
   );
@@ -325,7 +335,7 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
     setIsAiThinking(true);
 
     try {
-      const res = await fetch('/api/gemini/advisor', {
+      const res = await authenticatedApiFetch('/api/gemini/advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -832,6 +842,7 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
       {/* Top Bar: Google Stitch Ecosystem Header */}
       <header className="bg-white border-b border-[#E5E5E2] px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4 sticky top-0 z-30">
         <div className="flex items-center gap-3">
+          <button type="button" onClick={onReturnToGateway} aria-label="Volver a Candy Studio AI" className="flex h-8 w-8 items-center justify-center rounded-full border border-[#E5E5E2] text-black hover:bg-[#EEE8F9] focus-visible:outline-2 focus-visible:outline-offset-2">←</button>
           <button
             type="button"
             onClick={() => setPhase('welcome')}
@@ -913,6 +924,22 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
         </nav>
 
         <div className="flex items-center gap-2 shrink-0">
+          {!isAuthenticated && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await signInWithPopup(auth, googleProvider);
+                  onShowToast('Sesión iniciada. Ya puedes utilizar la importación inteligente.');
+                } catch {
+                  onShowToast('No se pudo iniciar sesión. Abre la app fuera de la vista previa integrada y prueba otra vez.');
+                }
+              }}
+              className="px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-white bg-[#6447A3] hover:bg-[#4B367C] focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              Entrar con Google
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowUxEvaluationModal((prev) => !prev)}

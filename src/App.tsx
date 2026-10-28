@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import {
   collection,
   doc,
@@ -12,6 +12,7 @@ import {
 import {
   db,
   auth,
+  googleProvider,
   handleFirestoreError,
   OperationType,
 } from './firebase';
@@ -42,6 +43,8 @@ import { MerchantGraphicStudioView } from './views/MerchantGraphicStudioView';
 import { BusinessThemeModal } from './components/BusinessThemeModal';
 import { PricingPlansModal } from './components/PricingPlansModal';
 import { OnboardingWizardView } from './views/OnboardingWizardView';
+import { CandyStudioGateway } from './views/CandyStudioGateway';
+import { BrandDiscoveryView } from './views/BrandDiscoveryView';
 import { sanitizeProductCollection } from './utils/catalogExtractor';
 
 const STORAGE_KEYS = {
@@ -90,6 +93,7 @@ export default function App() {
 
   // Auth & Firestore State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const previousAuthUidRef = useRef<string | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isDemoMerchantUnlocked, setIsDemoMerchantUnlocked] = useState(false);
@@ -114,6 +118,7 @@ export default function App() {
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
   const [showOnboardingWizard, setShowOnboardingWizard] = useState<boolean>(true);
+  const [entryFlow, setEntryFlow] = useState<'gateway' | 'catalog' | 'brand'>('gateway');
 
   const selectedProduct = useMemo(() => {
     return (
@@ -135,34 +140,52 @@ export default function App() {
     }, 3400);
   };
 
-  // Sync state to LocalStorage for instant offline/reload persistence
+  // Guest demo drafts only; authenticated business data belongs in Firestore.
   useEffect(() => {
+    if (currentUser) return;
     try {
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
     } catch {
       // ignore
     }
-  }, [products]);
+  }, [products, currentUser]);
 
   useEffect(() => {
+    if (currentUser) return;
     try {
       localStorage.setItem(STORAGE_KEYS.TENANT, JSON.stringify(tenantConfig));
     } catch {
       // ignore
     }
-  }, [tenantConfig]);
+  }, [tenantConfig, currentUser]);
 
   useEffect(() => {
+    if (currentUser) return;
     try {
       localStorage.setItem(STORAGE_KEYS.LEADS, JSON.stringify(leads));
     } catch {
       // ignore
     }
-  }, [leads]);
+  }, [leads, currentUser]);
 
   // Listen to Firebase Auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      const previousUid = previousAuthUidRef.current;
+      const nextUid = user?.uid || null;
+      const cachedTenant = localStorage.getItem(STORAGE_KEYS.TENANT);
+      let previousCachedOwner = false;
+      try { previousCachedOwner = Boolean(cachedTenant && JSON.parse(cachedTenant)?.ownerId); }
+      catch { /* Corrupt cached demo data should not block login */ }
+      if ((nextUid && previousUid !== nextUid) ||
+          (!nextUid && (previousUid !== null || previousCachedOwner))) {
+        // Never carry an account's locally cached tenant/products into another session.
+        Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+        setProducts(nextUid ? [] : INITIAL_PRODUCTS);
+        setTenantConfig(INITIAL_TENANT_CONFIG);
+        setLeads(INITIAL_LEADS);
+      }
+      previousAuthUidRef.current = nextUid;
       setCurrentUser(user);
       setIsAuthReady(true);
     });
@@ -192,58 +215,59 @@ export default function App() {
         const snap = await getDoc(tenantRef);
 
         if (!snap.exists()) {
-          // Bootstrap initial tenant document and current products into Firestore for this merchant
+          // New accounts must NEVER inherit localStorage or SIERRA demo products
+          // from another account. New tenants start with an empty inventory.
+          const emptyProfile = {
+            targetAudience: '',
+            productTypes: '',
+            valuePropositions: [],
+            suggestedCategories: [],
+            layoutStyle: 'editorial-luxury',
+            fontPairing: 'editorial-serif',
+            onboardingCompleted: false,
+          };
           await setDoc(tenantRef, {
             tenantId: activeTenantId,
             ownerId: currentUser.uid,
-            name: tenantConfig.name || 'SIERRA',
-            storeUrl: tenantConfig.storeUrl || 'sierra.candycatalog.store',
-            whatsappPhone: tenantConfig.whatsappPhone || '+52 477 123 4567',
-            showroomCity: tenantConfig.showroomCity || 'León, Guanajuato · México',
-            announcement: tenantConfig.announcement || '',
+            name: 'Mi negocio',
+            storeUrl: 'por-configurar',
+            whatsappPhone: 'Por configurar',
+            showroomCity: '',
+            announcement: '',
             autoSync: true,
-            currency: tenantConfig.currency || 'MXN',
-            logoUrl: tenantConfig.logoUrl || '',
-            accentColor: tenantConfig.accentColor || '#8C3A1B',
-            brandName: tenantConfig.theme?.brandName || tenantConfig.name || 'SIERRA',
-            industry:
-              tenantConfig.theme?.industry || 'Calzado Artesanal & Marroquinería',
-            tagline: tenantConfig.theme?.tagline || '',
-            tone: tenantConfig.theme?.tone || 'Editorial Contemporáneo',
+            currency: 'MXN',
+            logoUrl: '',
+            accentColor: '#8155E7',
+            brandName: 'Mi negocio',
+            industry: 'Por definir',
+            tagline: '',
+            tone: 'Editorial contemporáneo',
+            brandProfile: emptyProfile,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
-
-          for (const prod of products) {
-            const prodRef = doc(db, 'tenants', activeTenantId, 'products', prod.id);
-            await setDoc(prodRef, {
-              id: prod.id,
-              tenantId: activeTenantId,
-              ownerId: currentUser.uid,
-              sku: prod.sku,
-              name: prod.name,
-              subtitle: prod.subtitle || '',
-              description: prod.description,
-              category: prod.category,
-              catalogCategory: prod.catalogCategory || prod.category.toLowerCase(),
-              price: prod.price,
-              ...(prod.comparePrice ? { comparePrice: prod.comparePrice } : {}),
-              status: prod.status,
-              badge: prod.badge || '',
-              badgeType: prod.badgeType || 'secondary',
-              madeIn: prod.madeIn || tenantConfig.showroomCity || '',
-              heroImage: prod.heroImage,
-              waTemplate: prod.waTemplate,
-              availableSizes: prod.availableSizes.slice(0, 24),
-              tags: prod.tags.slice(0, 20),
-              finishes: prod.finishes.slice(0, 20),
-              galleryImages: prod.galleryImages.slice(0, 12),
-              sizeMatrix: prod.sizeMatrix.slice(0, 24),
-              craftDetails: (prod.craftDetails || []).slice(0, 15),
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            });
-          }
+          setTenantConfig({
+            ...INITIAL_TENANT_CONFIG,
+            tenantId: activeTenantId,
+            ownerId: currentUser.uid,
+            name: 'Mi negocio',
+            storeUrl: 'por-configurar',
+            whatsappPhone: 'Por configurar',
+            showroomCity: '',
+            announcement: '',
+            accentColor: '#8155E7',
+            theme: {
+              ...INITIAL_TENANT_CONFIG.theme!,
+              brandName: 'Mi negocio',
+              industry: 'Por definir',
+              tagline: '',
+              targetAudience: '',
+              valuePropositions: [],
+              suggestedCategories: [],
+              onboardingCompleted: false,
+            },
+          });
+          setProducts([]);
         } else {
           const data = snap.data();
           setTenantConfig((prev) => ({
@@ -263,6 +287,13 @@ export default function App() {
               industry: data.industry || prev.theme?.industry || '',
               tagline: data.tagline || prev.theme?.tagline || '',
               location: data.showroomCity || prev.showroomCity,
+              targetAudience: data.brandProfile?.targetAudience || prev.theme?.targetAudience || '',
+              productTypes: data.brandProfile?.productTypes || prev.theme?.productTypes || '',
+              valuePropositions: data.brandProfile?.valuePropositions || prev.theme?.valuePropositions || [],
+              suggestedCategories: data.brandProfile?.suggestedCategories || prev.theme?.suggestedCategories || [],
+              layoutStyle: data.brandProfile?.layoutStyle || prev.theme?.layoutStyle,
+              fontPairing: data.brandProfile?.fontPairing || prev.theme?.fontPairing,
+              onboardingCompleted: data.brandProfile?.onboardingCompleted ?? prev.theme?.onboardingCompleted ?? false,
             },
           }));
         }
@@ -305,7 +336,7 @@ export default function App() {
               const { validProducts, removedIds, updatedProducts } =
                 sanitizeProductCollection(loaded);
 
-              setProducts(validProducts.length > 0 ? validProducts : INITIAL_PRODUCTS);
+              setProducts(validProducts);
 
               // Automatically clean up non-product cover/index documents from Firestore
               if (removedIds.length > 0) {
@@ -342,6 +373,8 @@ export default function App() {
                   ).catch(() => {});
                 });
               }
+            } else {
+              setProducts([]);
             }
           },
           (error) => {
@@ -604,7 +637,7 @@ export default function App() {
 
   // Save Tenant Config
   const handleSaveTenantConfig = async (updated: TenantConfig) => {
-    setTenantConfig(updated);
+    // Only acknowledge a cloud save after Firestore succeeds.
     if (currentUser) {
       const path = `tenants/${activeTenantId}`;
       try {
@@ -626,6 +659,15 @@ export default function App() {
           industry: (updated.theme?.industry || '').slice(0, 120),
           tagline: (updated.theme?.tagline || '').slice(0, 300),
           tone: (updated.theme?.tone || '').slice(0, 120),
+          brandProfile: {
+            targetAudience: (updated.theme?.targetAudience || '').slice(0, 200),
+            productTypes: (updated.theme?.productTypes || '').slice(0, 200),
+            valuePropositions: (updated.theme?.valuePropositions || []).map(x => String(x).slice(0, 200)).slice(0, 5),
+            suggestedCategories: (updated.theme?.suggestedCategories || []).map(x => String(x).slice(0, 80)).slice(0, 8),
+            layoutStyle: updated.theme?.layoutStyle || 'editorial-luxury',
+            fontPairing: updated.theme?.fontPairing || 'editorial-serif',
+            onboardingCompleted: Boolean(updated.theme?.onboardingCompleted),
+          },
           createdAt: existingSnap.exists()
             ? existingSnap.data().createdAt
             : serverTimestamp(),
@@ -635,6 +677,7 @@ export default function App() {
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     }
+    setTenantConfig(updated);
   };
 
   // Add Item to Bag
@@ -669,11 +712,58 @@ export default function App() {
     showToast('Sesión de comerciante cerrada');
   };
 
+  if (showOnboardingWizard && entryFlow === 'gateway') {
+    return (
+      <CandyStudioGateway
+        onCatalog={() => setEntryFlow('catalog')}
+        onBrand={() => setEntryFlow('brand')}
+        onDemo={() => {
+          setTenantConfig(INITIAL_TENANT_CONFIG);
+          setProducts(INITIAL_PRODUCTS);
+          setSelectedProductId(INITIAL_PRODUCTS[0].id);
+          setShowOnboardingWizard(false);
+          setViewMode('public');
+          setPublicTab('catalog');
+          showToast('Explorando catálogo de demostración SIERRA Footwear');
+        }}
+        onMerchant={() => {
+          setShowOnboardingWizard(false);
+          handleSwitchViewMode('merchant');
+        }}
+      />
+    );
+  }
+
+  if (showOnboardingWizard && entryFlow === 'brand') {
+    return (
+      <>
+        <BrandDiscoveryView
+          tenantConfig={tenantConfig}
+          isAuthenticated={Boolean(currentUser)}
+          onLogin={async () => {
+            await signInWithPopup(auth, googleProvider);
+          }}
+          onBack={() => setEntryFlow('gateway')}
+          onSave={async (updatedConfig, openCatalog) => {
+            await handleSaveTenantConfig(updatedConfig);
+            showToast(currentUser
+              ? 'ADN de marca guardado en tu negocio.'
+              : 'ADN de marca guardado en este navegador. Inicia sesión para sincronizarlo.');
+            if (openCatalog) setEntryFlow('catalog');
+          }}
+        />
+        <Toast message={toastMessage} isVisible={isToastVisible} />
+      </>
+    );
+  }
+
   if (showOnboardingWizard) {
     return (
       <div className="min-h-screen bg-[#F9F9F8] text-[#1A1C1C]">
         <OnboardingWizardView
           tenantConfig={tenantConfig}
+          onReturnToGateway={() => setEntryFlow('gateway')}
+          isAuthenticated={Boolean(currentUser)}
           onComplete={async (updatedConfig, generatedProducts, destination) => {
             await handleSaveTenantConfig(updatedConfig);
             if (generatedProducts && generatedProducts.length > 0) {
@@ -745,7 +835,10 @@ export default function App() {
         onOpenSearch={() => setIsSearchModalOpen(true)}
         onOpenThemeModal={() => setIsThemeModalOpen(true)}
         onOpenPricingModal={() => setIsPricingModalOpen(true)}
-        onRestartOnboarding={() => setShowOnboardingWizard(true)}
+        onRestartOnboarding={() => {
+          setEntryFlow('gateway');
+          setShowOnboardingWizard(true);
+        }}
         currentUser={currentUser}
         onSignOut={handleSignOut}
       />

@@ -1,3 +1,4 @@
+import { authenticatedApiFetch } from '../utils/authenticatedApiFetch';
 import React, { useState, useEffect } from 'react';
 import {
   Product,
@@ -49,7 +50,7 @@ export const MerchantGraphicStudioView: React.FC<MerchantGraphicStudioViewProps>
   const handleRunStudioResearch = async (targetProd = selectedProduct) => {
     setIsResearching(true);
     try {
-      const response = await fetch('/api/gemini/graphic-design-marketing', {
+      const response = await authenticatedApiFetch('/api/gemini/graphic-design-marketing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

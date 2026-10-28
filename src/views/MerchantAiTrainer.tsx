@@ -1,3 +1,4 @@
+import { authenticatedApiFetch } from '../utils/authenticatedApiFetch';
 import React, { useState } from 'react';
 import { TenantConfig } from '../types';
 
@@ -106,7 +107,7 @@ export const MerchantAiTrainer: React.FC<MerchantAiTrainerProps> = ({
     setIsGenerating(true);
 
     try {
-      const res = await fetch('/api/gemini/advisor', {
+      const res = await authenticatedApiFetch('/api/gemini/advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -150,7 +151,7 @@ export const MerchantAiTrainer: React.FC<MerchantAiTrainerProps> = ({
   const handleAutoAnalyzeNeeds = async () => {
     onShowToast('Gemini analizando consultas históricas de WhatsApp...');
     try {
-      const res = await fetch('/api/gemini/analyze-needs', {
+      const res = await authenticatedApiFetch('/api/gemini/analyze-needs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

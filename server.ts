@@ -1,6 +1,9 @@
 import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import firebaseConfig from './firebase-applet-config.json';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
+import crypto from 'crypto';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -16,12 +19,9 @@ const ai = new GoogleGenAI({
   },
 });
 
-const MODEL_CANDIDATES = [
-  'gemini-3.1-flash-lite',
-  'gemini-3-flash-preview',
-  'gemini-3.8-flash',
-  'gemini-flash-latest',
-];
+// A single explicitly approved model prevents surprise paid-model failovers.
+// Operators can choose another model through GEMINI_MODEL.
+const MODEL_CANDIDATES = [process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite'];
 
 async function generateWithFallback(options: {
   contents: any;
@@ -35,8 +35,18 @@ async function generateWithFallback(options: {
         const response = await ai.models.generateContent({
           model: modelName,
           contents: options.contents,
-          config: options.config,
+          config: { ...options.config, maxOutputTokens: Math.min(options.config?.maxOutputTokens || 8192, 8192) },
         });
+        const usage = response.usageMetadata;
+        if (usage) {
+          console.info('Gemini usage', JSON.stringify({
+            model: modelName,
+            inputTokens: usage.promptTokenCount || 0,
+            outputTokens: usage.candidatesTokenCount || 0,
+            thoughtTokens: usage.thoughtsTokenCount || 0,
+            totalTokens: usage.totalTokenCount || 0,
+          }));
+        }
         return {
           text: response.text || '',
           modelUsed: modelName,
@@ -935,6 +945,35 @@ function parseCatalogTextFallback(pageText: string, fileName: string, pageNumber
 }
 
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
+const PERSISTENT_BUCKET = (process.env.CANDY_UPLOAD_BUCKET || '').trim();
+// Google Cloud Run service account must have storage.objects.create and storage.objects.get.
+// This keeps permanent files outside Cloud Run's ephemeral filesystem.
+async function getStorageAccessToken(): Promise<string> {
+  const response = await fetch(
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+    { headers: { 'Metadata-Flavor': 'Google' }, signal: AbortSignal.timeout(5000) }
+  );
+  if (!response.ok) throw new Error('Cloud Run storage credentials unavailable');
+  const data = await response.json() as { access_token?: string };
+  if (!data.access_token) throw new Error('No storage token available');
+  return data.access_token;
+}
+async function storePermanentImage(uid: string, filename: string, content: Buffer, mimeType: string) {
+  if (!PERSISTENT_BUCKET) throw new Error('CANDY_UPLOAD_BUCKET is not configured');
+  const objectName = 'tenants/' + uid + '/' + filename;
+  const token = await getStorageAccessToken();
+  const url = 'https://storage.googleapis.com/upload/storage/v1/b/' +
+    encodeURIComponent(PERSISTENT_BUCKET) + '/o?uploadType=media&name=' + encodeURIComponent(objectName);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': mimeType },
+    body: new Uint8Array(content),
+    signal: AbortSignal.timeout(20000)
+  });
+  if (!response.ok) throw new Error('Could not store image in Cloud Storage');
+  return '/uploads/' + encodeURIComponent(uid) + '/' + encodeURIComponent(filename);
+}
+
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
@@ -963,9 +1002,79 @@ const ALLOWED_MIME_TYPES: Record<string, string> = {
   'image/webp': 'webp',
 };
 
+// Verify tokens with the official Firebase Authentication REST endpoint.
+// Firebase web API keys are public project identifiers, not secret Gemini keys.
+async function verifyFirebaseUser(idToken: string): Promise<{ uid: string; email: string }> {
+  const response = await fetch(
+    'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + encodeURIComponent(firebaseConfig.apiKey),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+      signal: AbortSignal.timeout(8000),
+    }
+  );
+  if (!response.ok) throw new Error('invalid_auth_token');
+  const payload = await response.json() as { users?: Array<{ localId?: string; email?: string; emailVerified?: boolean; disabled?: boolean }> };
+  const user = payload.users?.[0];
+  if (!user?.localId || !user.emailVerified || user.disabled) throw new Error('unverified_or_disabled_account');
+  return { uid: user.localId, email: user.email || '' };
+}
+
+// Prototype guard: per-instance counters are only suitable for a single-instance pilot.
+// Before a paid multi-instance rollout, move quotas to a transactional shared store.
+const quotaCounters = new Map<string, { day: string; count: number }>();
+function dailyCount(key: string, limit: number): boolean {
+  const day = new Date().toISOString().slice(0, 10);
+  const previous = quotaCounters.get(key);
+  const count = previous?.day === day ? previous.count : 0;
+  if (count >= limit) return false;
+  quotaCounters.set(key, { day, count: count + 1 });
+  return true;
+}
+const aiCapPerUser = Math.max(1, Math.min(Number(process.env.AI_DAILY_REQUESTS_PER_USER) || 20, 1000));
+const aiCapGlobal = Math.max(1, Math.min(Number(process.env.AI_DAILY_REQUESTS_GLOBAL) || 200, 10000));
+const uploadCapPerUser = Math.max(1, Math.min(Number(process.env.UPLOAD_DAILY_REQUESTS_PER_USER) || 80, 1000));
+
+async function requireFirebaseUser(req: Request, res: Response, next: NextFunction) {
+  const match = /^Bearer ([A-Za-z0-9._-]+)$/.exec(req.headers.authorization || '');
+  if (!match) {
+    res.status(401).json({ error: 'Debes iniciar sesión para continuar.' });
+    return;
+  }
+  try {
+    (req as Request & { candyUser?: { uid: string; email: string } }).candyUser =
+      await verifyFirebaseUser(match[1]);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Sesión inválida o sin verificar. Inicia sesión de nuevo.' });
+  }
+}
+
+function limitAiRequests(req: Request, res: Response, next: NextFunction) {
+  const user = (req as Request & { candyUser?: { uid: string } }).candyUser;
+  if (!user) { res.status(401).json({ error: 'No autenticado.' }); return; }
+  const isUploads = req.baseUrl === '/api/uploads';
+  if (isUploads) {
+    if (!dailyCount('upload:' + user.uid, uploadCapPerUser)) {
+      res.status(429).json({ error: 'Alcanzaste el límite diario de cargas.' });
+      return;
+    }
+  } else {
+    // Count requests before calling Gemini so concurrent calls cannot exceed a local budget.
+    if (!dailyCount('ai:' + user.uid, aiCapPerUser) ||
+        !dailyCount('ai:global', aiCapGlobal)) {
+      res.status(429).json({ error: 'Límite de solicitudes de IA alcanzado.' });
+      return;
+    }
+    console.info('Candy AI request', JSON.stringify({ uid: user.uid, route: req.path }));
+  }
+  next();
+}
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
 
   // CRITICAL: Serve pdf.worker.min.mjs directly from Express BEFORE Vite middleware
   // so Vite never injects `import { injectQuery } from "/@vite/client"` into the Web Worker script.
@@ -975,7 +1084,38 @@ async function startServer() {
     res.sendFile(PDF_WORKER_SRC);
   });
 
+  // Authenticate and check quotas BEFORE parsing potentially large PDF/image payloads.
+  app.use('/api/gemini', requireFirebaseUser, limitAiRequests);
+  app.use('/api/uploads', requireFirebaseUser, limitAiRequests);
   app.use(express.json({ limit: '25mb' }));
+  // Public product images are served via a read-only proxy. Bucket itself stays private.
+  app.get('/uploads/:uid/:filename', async (req, res) => {
+    if (!PERSISTENT_BUCKET) {
+      return res.status(503).send('Permanent image storage is not configured.');
+    }
+    const { uid, filename } = req.params;
+    if (!/^[A-Za-z0-9_-]{6,128}$/.test(uid) || !/^[a-z0-9_-]{1,55}-[0-9]{12,}-[0-9a-f-]{36}\.(jpg|png|webp)$/.test(filename)) {
+      return res.status(400).send('Invalid image path');
+    }
+    try {
+      const token = await getStorageAccessToken();
+      const object = 'tenants/' + uid + '/' + filename;
+      const apiUrl = 'https://storage.googleapis.com/storage/v1/b/' +
+        encodeURIComponent(PERSISTENT_BUCKET) + '/o/' + encodeURIComponent(object) + '?alt=media';
+      const remote = await fetch(apiUrl, {
+        headers: { Authorization: 'Bearer ' + token },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!remote.ok) return res.status(remote.status === 404 ? 404 : 502).send('Image not available');
+      const ext = filename.split('.').pop();
+      res.setHeader('Content-Type', ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.end(Buffer.from(await remote.arrayBuffer()));
+    } catch {
+      return res.status(502).send('Image storage unavailable');
+    }
+  });
+  // Legacy demo images (not newly uploaded client images).
   app.use('/uploads', express.static(UPLOADS_DIR));
 
   // Persistent image upload endpoint with MIME type and 5MB size validation
@@ -1014,19 +1154,22 @@ async function startServer() {
         .toLowerCase()
         .replace(/[^a-z0-9-_]/g, '-')
         .slice(0, 40);
-      const uniqueName = `${safeBaseName}-${Date.now()}-${Math.round(
-        Math.random() * 1000
-      )}.${ext}`;
-      const filePath = path.join(UPLOADS_DIR, uniqueName);
-
-      await fs.promises.writeFile(filePath, buffer);
-
-      return res.json({
-        url: `/uploads/${uniqueName}`,
-        dataUrl,
-        size: buffer.length,
-        mimeType,
-      });
+      const uniqueName = `${safeBaseName}-${Date.now()}-${crypto.randomUUID()}.${ext}`;
+      const currentUser = (req as Request & { candyUser?: { uid: string } }).candyUser;
+      if (!currentUser?.uid) return res.status(401).json({ error: 'Authentication is required.' });
+      let storedUrl: string;
+      if (PERSISTENT_BUCKET) {
+        storedUrl = await storePermanentImage(currentUser.uid, uniqueName, buffer, mimeType);
+      } else if (process.env.NODE_ENV === 'production') {
+        return res.status(503).json({
+          error: 'Almacenamiento permanente no configurado. Configura CANDY_UPLOAD_BUCKET antes de publicar.'
+        });
+      } else {
+        // Development-only local fallback; never describe it as permanent.
+        await fs.promises.writeFile(path.join(UPLOADS_DIR, uniqueName), buffer);
+        storedUrl = '/uploads/' + uniqueName;
+      }
+      return res.json({ url: storedUrl, size: buffer.length, mimeType });
     } catch (error: any) {
       console.error('Upload error:', error);
       return res.status(500).json({

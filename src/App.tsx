@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import {
   collection,
   doc,
@@ -12,6 +12,7 @@ import {
 import {
   db,
   auth,
+  googleProvider,
   handleFirestoreError,
   OperationType,
 } from './firebase';
@@ -213,6 +214,15 @@ export default function App() {
               tenantConfig.theme?.industry || 'Calzado Artesanal & Marroquinería',
             tagline: tenantConfig.theme?.tagline || '',
             tone: tenantConfig.theme?.tone || 'Editorial Contemporáneo',
+            brandProfile: {
+              targetAudience: (tenantConfig.theme?.targetAudience || '').slice(0, 200),
+              productTypes: (tenantConfig.theme?.productTypes || '').slice(0, 200),
+              valuePropositions: (tenantConfig.theme?.valuePropositions || []).map(x => String(x).slice(0, 200)).slice(0, 5),
+              suggestedCategories: (tenantConfig.theme?.suggestedCategories || []).map(x => String(x).slice(0, 80)).slice(0, 8),
+              layoutStyle: tenantConfig.theme?.layoutStyle || 'editorial-luxury',
+              fontPairing: tenantConfig.theme?.fontPairing || 'editorial-serif',
+              onboardingCompleted: Boolean(tenantConfig.theme?.onboardingCompleted),
+            },
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -266,6 +276,13 @@ export default function App() {
               industry: data.industry || prev.theme?.industry || '',
               tagline: data.tagline || prev.theme?.tagline || '',
               location: data.showroomCity || prev.showroomCity,
+              targetAudience: data.brandProfile?.targetAudience || prev.theme?.targetAudience || '',
+              productTypes: data.brandProfile?.productTypes || prev.theme?.productTypes || '',
+              valuePropositions: data.brandProfile?.valuePropositions || prev.theme?.valuePropositions || [],
+              suggestedCategories: data.brandProfile?.suggestedCategories || prev.theme?.suggestedCategories || [],
+              layoutStyle: data.brandProfile?.layoutStyle || prev.theme?.layoutStyle,
+              fontPairing: data.brandProfile?.fontPairing || prev.theme?.fontPairing,
+              onboardingCompleted: data.brandProfile?.onboardingCompleted ?? prev.theme?.onboardingCompleted ?? false,
             },
           }));
         }
@@ -607,7 +624,7 @@ export default function App() {
 
   // Save Tenant Config
   const handleSaveTenantConfig = async (updated: TenantConfig) => {
-    setTenantConfig(updated);
+    // Only acknowledge a cloud save after Firestore succeeds.
     if (currentUser) {
       const path = `tenants/${activeTenantId}`;
       try {
@@ -629,6 +646,15 @@ export default function App() {
           industry: (updated.theme?.industry || '').slice(0, 120),
           tagline: (updated.theme?.tagline || '').slice(0, 300),
           tone: (updated.theme?.tone || '').slice(0, 120),
+          brandProfile: {
+            targetAudience: (updated.theme?.targetAudience || '').slice(0, 200),
+            productTypes: (updated.theme?.productTypes || '').slice(0, 200),
+            valuePropositions: (updated.theme?.valuePropositions || []).map(x => String(x).slice(0, 200)).slice(0, 5),
+            suggestedCategories: (updated.theme?.suggestedCategories || []).map(x => String(x).slice(0, 80)).slice(0, 8),
+            layoutStyle: updated.theme?.layoutStyle || 'editorial-luxury',
+            fontPairing: updated.theme?.fontPairing || 'editorial-serif',
+            onboardingCompleted: Boolean(updated.theme?.onboardingCompleted),
+          },
           createdAt: existingSnap.exists()
             ? existingSnap.data().createdAt
             : serverTimestamp(),
@@ -638,6 +664,7 @@ export default function App() {
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     }
+    setTenantConfig(updated);
   };
 
   // Add Item to Bag
@@ -699,6 +726,10 @@ export default function App() {
       <>
         <BrandDiscoveryView
           tenantConfig={tenantConfig}
+          isAuthenticated={Boolean(currentUser)}
+          onLogin={async () => {
+            await signInWithPopup(auth, googleProvider);
+          }}
           onBack={() => setEntryFlow('gateway')}
           onSave={async (updatedConfig, openCatalog) => {
             await handleSaveTenantConfig(updatedConfig);

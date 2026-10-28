@@ -1,6 +1,9 @@
 import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import firebaseConfig from './firebase-applet-config.json';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
+import crypto from 'crypto';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -16,12 +19,9 @@ const ai = new GoogleGenAI({
   },
 });
 
-const MODEL_CANDIDATES = [
-  'gemini-3.1-flash-lite',
-  'gemini-3-flash-preview',
-  'gemini-3.8-flash',
-  'gemini-flash-latest',
-];
+// A single explicitly approved model prevents surprise paid-model failovers.
+// Operators can choose another model through GEMINI_MODEL.
+const MODEL_CANDIDATES = [process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite'];
 
 async function generateWithFallback(options: {
   contents: any;
@@ -35,8 +35,18 @@ async function generateWithFallback(options: {
         const response = await ai.models.generateContent({
           model: modelName,
           contents: options.contents,
-          config: options.config,
+          config: { ...options.config, maxOutputTokens: Math.min(options.config?.maxOutputTokens || 8192, 8192) },
         });
+        const usage = response.usageMetadata;
+        if (usage) {
+          console.info('Gemini usage', JSON.stringify({
+            model: modelName,
+            inputTokens: usage.promptTokenCount || 0,
+            outputTokens: usage.candidatesTokenCount || 0,
+            thoughtTokens: usage.thoughtsTokenCount || 0,
+            totalTokens: usage.totalTokenCount || 0,
+          }));
+        }
         return {
           text: response.text || '',
           modelUsed: modelName,
@@ -963,6 +973,76 @@ const ALLOWED_MIME_TYPES: Record<string, string> = {
   'image/webp': 'webp',
 };
 
+// Verify tokens with the official Firebase Authentication REST endpoint.
+// Firebase web API keys are public project identifiers, not secret Gemini keys.
+async function verifyFirebaseUser(idToken: string): Promise<{ uid: string; email: string }> {
+  const response = await fetch(
+    'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + encodeURIComponent(firebaseConfig.apiKey),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+      signal: AbortSignal.timeout(8000),
+    }
+  );
+  if (!response.ok) throw new Error('invalid_auth_token');
+  const payload = await response.json() as { users?: Array<{ localId?: string; email?: string; emailVerified?: boolean; disabled?: boolean }> };
+  const user = payload.users?.[0];
+  if (!user?.localId || !user.emailVerified || user.disabled) throw new Error('unverified_or_disabled_account');
+  return { uid: user.localId, email: user.email || '' };
+}
+
+// Prototype guard: per-instance counters are only suitable for a single-instance pilot.
+// Before a paid multi-instance rollout, move quotas to a transactional shared store.
+const quotaCounters = new Map<string, { day: string; count: number }>();
+function dailyCount(key: string, limit: number): boolean {
+  const day = new Date().toISOString().slice(0, 10);
+  const previous = quotaCounters.get(key);
+  const count = previous?.day === day ? previous.count : 0;
+  if (count >= limit) return false;
+  quotaCounters.set(key, { day, count: count + 1 });
+  return true;
+}
+const aiCapPerUser = Math.max(1, Math.min(Number(process.env.AI_DAILY_REQUESTS_PER_USER) || 20, 1000));
+const aiCapGlobal = Math.max(1, Math.min(Number(process.env.AI_DAILY_REQUESTS_GLOBAL) || 200, 10000));
+const uploadCapPerUser = Math.max(1, Math.min(Number(process.env.UPLOAD_DAILY_REQUESTS_PER_USER) || 80, 1000));
+
+async function requireFirebaseUser(req: Request, res: Response, next: NextFunction) {
+  const match = /^Bearer ([A-Za-z0-9._-]+)$/.exec(req.headers.authorization || '');
+  if (!match) {
+    res.status(401).json({ error: 'Debes iniciar sesión para continuar.' });
+    return;
+  }
+  try {
+    (req as Request & { candyUser?: { uid: string; email: string } }).candyUser =
+      await verifyFirebaseUser(match[1]);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Sesión inválida o sin verificar. Inicia sesión de nuevo.' });
+  }
+}
+
+function limitAiRequests(req: Request, res: Response, next: NextFunction) {
+  const user = (req as Request & { candyUser?: { uid: string } }).candyUser;
+  if (!user) { res.status(401).json({ error: 'No autenticado.' }); return; }
+  const isUploads = req.path.startsWith('/uploads');
+  if (isUploads) {
+    if (!dailyCount('upload:' + user.uid, uploadCapPerUser)) {
+      res.status(429).json({ error: 'Alcanzaste el límite diario de cargas.' });
+      return;
+    }
+  } else {
+    // Count requests before calling Gemini so concurrent calls cannot exceed a local budget.
+    if (!dailyCount('ai:' + user.uid, aiCapPerUser) ||
+        !dailyCount('ai:global', aiCapGlobal)) {
+      res.status(429).json({ error: 'Límite de solicitudes de IA alcanzado.' });
+      return;
+    }
+    console.info('Candy AI request', JSON.stringify({ uid: user.uid, route: req.path }));
+  }
+  next();
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -976,6 +1056,9 @@ async function startServer() {
   });
 
   app.use(express.json({ limit: '25mb' }));
+  // Apply auth AND budget checks before any paid model inference.
+  app.use('/api/gemini', requireFirebaseUser, limitAiRequests);
+  app.use('/api/uploads', requireFirebaseUser, limitAiRequests);
   app.use('/uploads', express.static(UPLOADS_DIR));
 
   // Persistent image upload endpoint with MIME type and 5MB size validation
@@ -1014,9 +1097,7 @@ async function startServer() {
         .toLowerCase()
         .replace(/[^a-z0-9-_]/g, '-')
         .slice(0, 40);
-      const uniqueName = `${safeBaseName}-${Date.now()}-${Math.round(
-        Math.random() * 1000
-      )}.${ext}`;
+      const uniqueName = `${safeBaseName}-${Date.now()}-${crypto.randomUUID()}.${ext}`;
       const filePath = path.join(UPLOADS_DIR, uniqueName);
 
       await fs.promises.writeFile(filePath, buffer);

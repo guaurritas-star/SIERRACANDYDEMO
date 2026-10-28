@@ -77,24 +77,21 @@ export async function processAndUploadImage(
   const compressedDataUrl = await compressImageToDataUrl(file);
   const cleanName = file.name.replace(/\.[^/.]+$/, '');
 
-  let originalStoredUrl = compressedDataUrl;
-  try {
-    const response = await authenticatedApiFetch('/api/uploads', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        dataUrl: compressedDataUrl,
-        fileName: `${cleanName}-orig`,
-      }),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      originalStoredUrl = data.dataUrl || data.url || compressedDataUrl;
-    }
-  } catch {
-    // Fallback to compressed persistent dataUrl if offline
+  const response = await authenticatedApiFetch('/api/uploads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      dataUrl: compressedDataUrl,
+      fileName: `${cleanName}-orig`,
+    }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || 'No se pudo guardar la fotografía en almacenamiento permanente.');
   }
+  const stored = await response.json();
+  if (!stored.url) throw new Error('El servidor no confirmó la URL de la fotografía.');
+  const originalStoredUrl: string = stored.url;
 
   let finalUrl = originalStoredUrl;
   if (backgroundMode !== 'original') {

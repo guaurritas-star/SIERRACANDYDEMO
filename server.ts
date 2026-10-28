@@ -1025,7 +1025,7 @@ async function requireFirebaseUser(req: Request, res: Response, next: NextFuncti
 function limitAiRequests(req: Request, res: Response, next: NextFunction) {
   const user = (req as Request & { candyUser?: { uid: string } }).candyUser;
   if (!user) { res.status(401).json({ error: 'No autenticado.' }); return; }
-  const isUploads = req.path.startsWith('/uploads');
+  const isUploads = req.baseUrl === '/api/uploads';
   if (isUploads) {
     if (!dailyCount('upload:' + user.uid, uploadCapPerUser)) {
       res.status(429).json({ error: 'Alcanzaste el límite diario de cargas.' });

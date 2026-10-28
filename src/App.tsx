@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { signInWithGoogle } from './utils/googleSignIn';
 import {
   collection,
   doc,
@@ -12,7 +13,7 @@ import {
 import {
   db,
   auth,
-  googleProvider,
+
   handleFirestoreError,
   OperationType,
 } from './firebase';
@@ -741,7 +742,7 @@ export default function App() {
           tenantConfig={tenantConfig}
           isAuthenticated={Boolean(currentUser)}
           onLogin={async () => {
-            await signInWithPopup(auth, googleProvider);
+            await signInWithGoogle();
           }}
           onBack={() => setEntryFlow('gateway')}
           onSave={async (updatedConfig, openCatalog) => {

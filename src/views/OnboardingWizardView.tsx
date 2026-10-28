@@ -1,6 +1,5 @@
 import { authenticatedApiFetch } from '../utils/authenticatedApiFetch';
-import { signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase';
+import { signInWithGoogle, googleSignInErrorMessage } from '../utils/googleSignIn';
 import React, { useState, useRef } from 'react';
 import {
   Product,
@@ -929,10 +928,10 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
               type="button"
               onClick={async () => {
                 try {
-                  await signInWithPopup(auth, googleProvider);
+                  await signInWithGoogle();
                   onShowToast('Sesión iniciada. Ya puedes utilizar la importación inteligente.');
-                } catch {
-                  onShowToast('No se pudo iniciar sesión. Abre la app fuera de la vista previa integrada y prueba otra vez.');
+                } catch (error) {
+                  onShowToast(googleSignInErrorMessage(error));
                 }
               }}
               className="px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-white bg-[#6447A3] hover:bg-[#4B367C] focus-visible:outline-2 focus-visible:outline-offset-2"

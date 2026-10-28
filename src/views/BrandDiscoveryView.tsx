@@ -5,6 +5,8 @@ import type { TenantConfig, BusinessTheme, CatalogLayoutStyle, CatalogFontPairin
 
 interface BrandDiscoveryViewProps {
   tenantConfig: TenantConfig;
+  isAuthenticated: boolean;
+  onLogin: () => Promise<void>;
   onBack: () => void;
   onSave: (config: TenantConfig, openCatalog: boolean) => Promise<void>;
 }
@@ -55,7 +57,7 @@ function cleanText(text: string | undefined, max: number): string {
   return (text || '').trim().slice(0, max);
 }
 
-export function BrandDiscoveryView({ tenantConfig, onBack, onSave }: BrandDiscoveryViewProps) {
+export function BrandDiscoveryView({ tenantConfig, isAuthenticated, onLogin, onBack, onSave }: BrandDiscoveryViewProps) {
   const existing = tenantConfig.theme;
   const isDemo = !existing?.brandName || /^sierra( footwear)?$/i.test(existing.brandName.trim());
   const [name, setName] = useState(isDemo ? '' : existing?.brandName || '');
@@ -68,6 +70,7 @@ export function BrandDiscoveryView({ tenantConfig, onBack, onSave }: BrandDiscov
   const [selection, setSelection] = useState('editorial');
   const [step, setStep] = useState<'brief' | 'direction'>('brief');
   const [busy, setBusy] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const direction = DIRECTIONS.find(x => x.id === selection) || DIRECTIONS[0];
@@ -75,6 +78,7 @@ export function BrandDiscoveryView({ tenantConfig, onBack, onSave }: BrandDiscov
   const analyzeBrand = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy || name.trim().length < 2 || description.trim().length < 12) return;
+    if (!isAuthenticated) { setError('Inicia sesión con Google antes de consultar a Gemini.'); return; }
     setError('');
     setBusy(true);
     try {
@@ -180,7 +184,21 @@ export function BrandDiscoveryView({ tenantConfig, onBack, onSave }: BrandDiscov
               <textarea id="brand-description" value={description} maxLength={1200} onChange={e => setDescription(e.target.value)} required minLength={12} rows={5} placeholder="Cuéntanos la idea, productos, servicios o valores de tu negocio..." className="w-full resize-y rounded-xl border border-[#D7D3D0] bg-[#FAF9F7] px-4 py-3 text-sm leading-relaxed outline-none focus:border-[#8155E7] focus:ring-2 focus:ring-[#8155E7]/20"/>
               <label className="block text-xs font-bold uppercase tracking-wider" htmlFor="brand-audience">¿A quién quieres llegar? <span className="font-normal normal-case text-[#7D7779]">(Opcional)</span></label>
               <input id="brand-audience" value={audience} maxLength={350} onChange={e => setAudience(e.target.value)} placeholder="Ej. Personas que buscan regalos originales" className="w-full rounded-xl border border-[#D7D3D0] bg-[#FAF9F7] px-4 py-3 text-sm outline-none focus:border-[#8155E7] focus:ring-2 focus:ring-[#8155E7]/20"/>
-              <button type="submit" disabled={busy || name.trim().length < 2 || description.trim().length < 12} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#241D32] px-6 py-4 text-sm font-bold text-white hover:bg-[#6643AA] disabled:cursor-not-allowed disabled:opacity-50">
+              {!isAuthenticated ? (
+                <div className="rounded-xl border border-[#D5C7F0] bg-[#F5F0FF] p-4">
+                  <p className="mb-3 text-sm leading-relaxed text-[#4F3A6D]">Para proteger los créditos de IA, inicia sesión con Google antes de analizar tu marca. Tus respuestas se conservarán en esta pantalla.</p>
+                  <button type="button" disabled={loggingIn} onClick={async () => {
+                    setError('');
+                    setLoggingIn(true);
+                    try { await onLogin(); }
+                    catch { setError('No se pudo iniciar sesión. Si estás en una vista previa integrada, abre la app en una pestaña independiente.'); }
+                    finally { setLoggingIn(false); }
+                  }} className="rounded-full bg-[#2C1F43] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#5C3D95] disabled:opacity-50">
+                    {loggingIn ? 'Abriendo Google...' : 'Iniciar sesión con Google'}
+                  </button>
+                </div>
+              ) : <p className="text-xs font-semibold text-[#436245]">✓ Sesión activa · El análisis está habilitado.</p>}
+              <button type="submit" disabled={!isAuthenticated || busy || name.trim().length < 2 || description.trim().length < 12} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#241D32] px-6 py-4 text-sm font-bold text-white hover:bg-[#6643AA] disabled:cursor-not-allowed disabled:opacity-50">
                 {busy ? <><LoaderCircle className="h-4 w-4 animate-spin"/> Analizando con Gemini...</> : <>Descubrir mi marca con IA <ArrowRight className="h-4 w-4"/></>}
               </button>
               <p className="text-xs text-[#777078]">La consulta a Gemini se ejecuta solo cuando presionas el botón. No generamos logotipos ni publicamos nada en esta etapa.</p>

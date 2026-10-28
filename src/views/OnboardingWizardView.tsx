@@ -970,7 +970,8 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
           <strong>No pudimos abrir tu sesión de Google.</strong> {googleLoginError}
         </div>
       )}
-      {mark}
+      {/* ================================================================= */}
+      {/* PANEL DESPLEGABLE: EVALUACIÓN UX/UI STITCH & CANDY CATALOG */}
       {/* ================================================================= */}
       {showUxEvaluationModal && (
         <section

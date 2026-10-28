@@ -31,6 +31,7 @@ interface OnboardingWizardViewProps {
   ) => void;
   onExploreDemoSierra: () => void;
   onOpenMerchantConsole: () => void;
+  onReturnToGateway: () => void;
   onShowToast: (msg: string) => void;
 }
 
@@ -46,6 +47,7 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
   onComplete,
   onExploreDemoSierra,
   onOpenMerchantConsole,
+  onReturnToGateway,
   onShowToast,
 }) => {
   const [phase, setPhase] = useState<OnboardingPhase>('welcome');
@@ -60,11 +62,14 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
   const [userInput, setUserInput] = useState('');
   const [isAiThinking, setIsAiThinking] = useState(false);
 
-  const [brandName, setBrandName] = useState('');
-  const [industry, setIndustry] = useState('');
+  const [brandName, setBrandName] = useState(
+    /^sierra( footwear)?$/i.test(tenantConfig.theme?.brandName || '')
+      ? '' : (tenantConfig.theme?.brandName || '')
+  );
+  const [industry, setIndustry] = useState(tenantConfig.theme?.industry || '');
   const [productTypes, setProductTypes] = useState('');
-  const [targetAudience, setTargetAudience] = useState('');
-  const [location, setLocation] = useState('');
+  const [targetAudience, setTargetAudience] = useState(tenantConfig.theme?.targetAudience || '');
+  const [location, setLocation] = useState(tenantConfig.theme?.location || '');
   const [whatsappPhone, setWhatsappPhone] = useState(
     tenantConfig.whatsappPhone || '+52 477 123 4567'
   );
@@ -832,6 +837,7 @@ export const OnboardingWizardView: React.FC<OnboardingWizardViewProps> = ({
       {/* Top Bar: Google Stitch Ecosystem Header */}
       <header className="bg-white border-b border-[#E5E5E2] px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4 sticky top-0 z-30">
         <div className="flex items-center gap-3">
+          <button type="button" onClick={onReturnToGateway} aria-label="Volver a Candy Studio AI" className="flex h-8 w-8 items-center justify-center rounded-full border border-[#E5E5E2] text-black hover:bg-[#EEE8F9] focus-visible:outline-2 focus-visible:outline-offset-2">←</button>
           <button
             type="button"
             onClick={() => setPhase('welcome')}

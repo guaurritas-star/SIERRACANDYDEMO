@@ -1,3 +1,4 @@
+import { authenticatedApiFetch } from '../utils/authenticatedApiFetch';
 import React, { useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, CircleAlert, Lightbulb, LoaderCircle, Palette, Sparkles } from 'lucide-react';
 import type { TenantConfig, BusinessTheme, CatalogLayoutStyle, CatalogFontPairing } from '../types';
@@ -77,7 +78,7 @@ export function BrandDiscoveryView({ tenantConfig, onBack, onSave }: BrandDiscov
     setError('');
     setBusy(true);
     try {
-      const response = await fetch('/api/gemini/advisor', {
+      const response = await authenticatedApiFetch('/api/gemini/advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

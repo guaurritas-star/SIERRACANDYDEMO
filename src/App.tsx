@@ -750,6 +750,7 @@ export default function App() {
         <OnboardingWizardView
           tenantConfig={tenantConfig}
           onReturnToGateway={() => setEntryFlow('gateway')}
+          isAuthenticated={Boolean(currentUser)}
           onComplete={async (updatedConfig, generatedProducts, destination) => {
             await handleSaveTenantConfig(updatedConfig);
             if (generatedProducts && generatedProducts.length > 0) {

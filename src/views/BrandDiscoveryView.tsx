@@ -1,4 +1,5 @@
 import { authenticatedApiFetch } from '../utils/authenticatedApiFetch';
+import { googleSignInErrorMessage } from '../utils/googleSignIn';
 import React, { useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, CircleAlert, Lightbulb, LoaderCircle, Palette, Sparkles } from 'lucide-react';
 import type { TenantConfig, BusinessTheme, CatalogLayoutStyle, CatalogFontPairing } from '../types';
@@ -191,7 +192,7 @@ export function BrandDiscoveryView({ tenantConfig, isAuthenticated, onLogin, onB
                     setError('');
                     setLoggingIn(true);
                     try { await onLogin(); }
-                    catch { setError('No se pudo iniciar sesión. Si estás en una vista previa integrada, abre la app en una pestaña independiente.'); }
+                    catch (error) { setError(googleSignInErrorMessage(error)); }
                     finally { setLoggingIn(false); }
                   }} className="rounded-full bg-[#2C1F43] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#5C3D95] disabled:opacity-50">
                     {loggingIn ? 'Abriendo Google...' : 'Iniciar sesión con Google'}

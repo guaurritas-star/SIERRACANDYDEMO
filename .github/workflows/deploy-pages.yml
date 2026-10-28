@@ -37,6 +37,9 @@ jobs:
         env:
           GITHUB_PAGES: 'true'
 
+      - name: Smoke-test protected backend routes
+        run: node scripts/security-smoke.mjs
+
       - name: Configure Pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5

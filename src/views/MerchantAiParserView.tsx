@@ -339,25 +339,24 @@ export const MerchantAiParserView: React.FC<MerchantAiParserViewProps> = ({
     const reader = new FileReader();
     reader.onload = async () => {
       const dataUrl = reader.result as string;
-      let finalUrl = dataUrl;
       try {
         const res = await authenticatedApiFetch('/api/uploads', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dataUrl, fileName: file.name }),
         });
-        if (res.ok) {
-          const d = await res.json();
-          if (d.url || d.dataUrl) finalUrl = d.url || d.dataUrl;
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          throw new Error(payload.error || 'No se pudo guardar la foto.');
         }
-      } catch {
-        // fallback to dataUrl
+        const saved = await res.json();
+        if (!saved.url) throw new Error('La imagen no se guardó correctamente.');
+        handleUpdateDraft(replacingProductId, { heroImage: saved.url });
+        onShowToast('Fotografía reemplazada y guardada.');
+        setReplacingProductId(null);
+      } catch (error) {
+        onShowToast(error instanceof Error ? error.message : 'No se pudo subir la fotografía.');
       }
-      handleUpdateDraft(replacingProductId, {
-        heroImage: finalUrl,
-      });
-      onShowToast('Fotografía reemplazada.');
-      setReplacingProductId(null);
     };
     reader.readAsDataURL(file);
   };

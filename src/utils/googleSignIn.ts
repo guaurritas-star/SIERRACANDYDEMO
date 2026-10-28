@@ -15,8 +15,10 @@ export function googleSignInErrorMessage(error: unknown): string {
     : '';
 
   switch (code) {
-    case 'auth/unauthorized-domain':
-      return 'Este sitio todavía no está autorizado en Firebase. Candy Studio debe agregar guaurritas-star.github.io en Authentication → Settings → Authorized domains (sin https:// ni /SIERRACANDYDEMO/).';
+    case 'auth/unauthorized-domain': {
+      const hostname = typeof window !== 'undefined' ? window.location.hostname : 'el dominio de la aplicación';
+      return `Este sitio todavía no está autorizado en Firebase. Candy Studio debe agregar ${hostname} en Authentication → Settings → Authorized domains (sin https:// ni la ruta).`;
+    }
     case 'auth/operation-not-allowed':
       return 'El acceso con Google no está habilitado en el proyecto Firebase. Candy Studio debe activarlo en Authentication → Sign-in method → Google.';
     case 'auth/popup-blocked':

@@ -196,67 +196,59 @@ export default function App() {
         const snap = await getDoc(tenantRef);
 
         if (!snap.exists()) {
-          // Bootstrap initial tenant document and current products into Firestore for this merchant
+          // New accounts must NEVER inherit localStorage or SIERRA demo products
+          // from another account. New tenants start with an empty inventory.
+          const emptyProfile = {
+            targetAudience: '',
+            productTypes: '',
+            valuePropositions: [],
+            suggestedCategories: [],
+            layoutStyle: 'editorial-luxury',
+            fontPairing: 'editorial-serif',
+            onboardingCompleted: false,
+          };
           await setDoc(tenantRef, {
             tenantId: activeTenantId,
             ownerId: currentUser.uid,
-            name: tenantConfig.name || 'SIERRA',
-            storeUrl: tenantConfig.storeUrl || 'sierra.candycatalog.store',
-            whatsappPhone: tenantConfig.whatsappPhone || '+52 477 123 4567',
-            showroomCity: tenantConfig.showroomCity || 'León, Guanajuato · México',
-            announcement: tenantConfig.announcement || '',
+            name: 'Mi negocio',
+            storeUrl: 'por-configurar',
+            whatsappPhone: 'Por configurar',
+            showroomCity: '',
+            announcement: '',
             autoSync: true,
-            currency: tenantConfig.currency || 'MXN',
-            logoUrl: tenantConfig.logoUrl || '',
-            accentColor: tenantConfig.accentColor || '#8C3A1B',
-            brandName: tenantConfig.theme?.brandName || tenantConfig.name || 'SIERRA',
-            industry:
-              tenantConfig.theme?.industry || 'Calzado Artesanal & Marroquinería',
-            tagline: tenantConfig.theme?.tagline || '',
-            tone: tenantConfig.theme?.tone || 'Editorial Contemporáneo',
-            brandProfile: {
-              targetAudience: (tenantConfig.theme?.targetAudience || '').slice(0, 200),
-              productTypes: (tenantConfig.theme?.productTypes || '').slice(0, 200),
-              valuePropositions: (tenantConfig.theme?.valuePropositions || []).map(x => String(x).slice(0, 200)).slice(0, 5),
-              suggestedCategories: (tenantConfig.theme?.suggestedCategories || []).map(x => String(x).slice(0, 80)).slice(0, 8),
-              layoutStyle: tenantConfig.theme?.layoutStyle || 'editorial-luxury',
-              fontPairing: tenantConfig.theme?.fontPairing || 'editorial-serif',
-              onboardingCompleted: Boolean(tenantConfig.theme?.onboardingCompleted),
-            },
+            currency: 'MXN',
+            logoUrl: '',
+            accentColor: '#8155E7',
+            brandName: 'Mi negocio',
+            industry: 'Por definir',
+            tagline: '',
+            tone: 'Editorial contemporáneo',
+            brandProfile: emptyProfile,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
-
-          for (const prod of products) {
-            const prodRef = doc(db, 'tenants', activeTenantId, 'products', prod.id);
-            await setDoc(prodRef, {
-              id: prod.id,
-              tenantId: activeTenantId,
-              ownerId: currentUser.uid,
-              sku: prod.sku,
-              name: prod.name,
-              subtitle: prod.subtitle || '',
-              description: prod.description,
-              category: prod.category,
-              catalogCategory: prod.catalogCategory || prod.category.toLowerCase(),
-              price: prod.price,
-              ...(prod.comparePrice ? { comparePrice: prod.comparePrice } : {}),
-              status: prod.status,
-              badge: prod.badge || '',
-              badgeType: prod.badgeType || 'secondary',
-              madeIn: prod.madeIn || tenantConfig.showroomCity || '',
-              heroImage: prod.heroImage,
-              waTemplate: prod.waTemplate,
-              availableSizes: prod.availableSizes.slice(0, 24),
-              tags: prod.tags.slice(0, 20),
-              finishes: prod.finishes.slice(0, 20),
-              galleryImages: prod.galleryImages.slice(0, 12),
-              sizeMatrix: prod.sizeMatrix.slice(0, 24),
-              craftDetails: (prod.craftDetails || []).slice(0, 15),
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            });
-          }
+          setTenantConfig({
+            ...INITIAL_TENANT_CONFIG,
+            tenantId: activeTenantId,
+            ownerId: currentUser.uid,
+            name: 'Mi negocio',
+            storeUrl: 'por-configurar',
+            whatsappPhone: 'Por configurar',
+            showroomCity: '',
+            announcement: '',
+            accentColor: '#8155E7',
+            theme: {
+              ...INITIAL_TENANT_CONFIG.theme!,
+              brandName: 'Mi negocio',
+              industry: 'Por definir',
+              tagline: '',
+              targetAudience: '',
+              valuePropositions: [],
+              suggestedCategories: [],
+              onboardingCompleted: false,
+            },
+          });
+          setProducts([]);
         } else {
           const data = snap.data();
           setTenantConfig((prev) => ({
@@ -325,7 +317,7 @@ export default function App() {
               const { validProducts, removedIds, updatedProducts } =
                 sanitizeProductCollection(loaded);
 
-              setProducts(validProducts.length > 0 ? validProducts : INITIAL_PRODUCTS);
+              setProducts(validProducts);
 
               // Automatically clean up non-product cover/index documents from Firestore
               if (removedIds.length > 0) {
@@ -362,6 +354,8 @@ export default function App() {
                   ).catch(() => {});
                 });
               }
+            } else {
+              setProducts([]);
             }
           },
           (error) => {
